@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { getAllTenders } from "../../data/tenders";
+import { evaluateTenderMatch } from "../../lib/tender-matching";
+import { getCurrentUser } from "../../lib/current-user";
+import connectDB from "../../lib/db";
+import MsmeProfile from "../../models/MsmeProfile";
+import { adaptProfileForMatching } from "../../lib/profile-to-matching";
 
 const MONTHS = [
   "Jan",
@@ -15,6 +20,14 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
+
+const RECOGNIZED_CRITERIA_KEYS = new Set([
+  "departmentalEnlistment",
+  "similarTermContractWorks",
+  "minAnnualTurnover",
+  "maxLossYears",
+  "availableBidCapacity",
+]);
 
 function formatDateParts(year, month, day) {
   const monthIndex = Number(month) - 1;
@@ -48,17 +61,43 @@ function formatTenderValue(value) {
   return value;
 }
 
+function statusClassName(label) {
+  if (label === "Pass" || label === "Eligible") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (label === "Not Eligible" || label === "fail") {
+    return "border-red-200 bg-red-50 text-red-800";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
 export const metadata = {
   title: "Browse Tenders | TenderBridge",
   description: "Explore government tender opportunities and view detailed requirements for MSMEs.",
 };
 
-export default function TendersPage() {
+export default async function TendersPage() {
   const tenders = getAllTenders();
 
+  // Load authenticated user and profile
+  const auth = await getCurrentUser();
+  const isSignedIn = Boolean(auth && auth.user);
+
+  let userProfile = null;
+  if (isSignedIn) {
+    try {
+      await connectDB();
+      userProfile = await MsmeProfile.findOne({ userId: auth.user.id }).lean();
+    } catch (err) {
+      console.error("Failed to load user profile on tenders catalogue:", err.message);
+    }
+  }
+
+  const adaptedProfile = userProfile ? adaptProfileForMatching(userProfile) : null;
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-8 border-b border-gray-100 pb-6">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mb-6 border-b border-gray-100 pb-6">
         <p className="text-sm font-semibold uppercase tracking-widest text-green-800">
           Opportunities Catalogue
         </p>
@@ -70,80 +109,220 @@ export default function TendersPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Authenticated State Banners */}
+      {isSignedIn ? (
+        userProfile ? (
+          <div className="mb-6 rounded-lg border border-green-200 bg-green-50/70 p-4 text-sm text-green-950">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-green-600" />
+                  <p className="font-semibold text-green-900">Personalized Tender Matching Active</p>
+                </div>
+                <p className="mt-0.5 text-xs text-green-800">
+                  Eligibility evaluated against stored profile for <span className="font-semibold">{userProfile.legalName}</span>.
+                </p>
+              </div>
+              <Link
+                href="/account/profile"
+                className="inline-flex shrink-0 items-center rounded-md border border-green-800 bg-white px-3 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-50"
+              >
+                Edit Profile
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <p className="font-semibold">Personalized Matching Available</p>
+                <p className="text-xs text-amber-800">
+                  Create your MSME company profile to see personalized tender eligibility across all opportunities.
+                </p>
+              </div>
+              <Link
+                href="/account/profile"
+                className="inline-flex shrink-0 items-center rounded-md bg-green-800 px-3.5 py-2 text-xs font-semibold text-white hover:bg-green-900"
+              >
+                Create Profile &rarr;
+              </Link>
+            </div>
+          </div>
+        )
+      ) : null}
+
+      <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 lg:grid-cols-3">
         {tenders.map((tender) => {
           const isCppp = tender.source === "CPPP";
+          const requirements = Array.isArray(tender.eligibilityRequirements)
+            ? tender.eligibilityRequirements
+            : [];
+          const hasRecognizedCriteria = requirements.some(
+            (req) => req && RECOGNIZED_CRITERIA_KEYS.has(req.criteriaKey)
+          );
+
+          // Calculate match for authenticated user with profile
+          let matchResult = null;
+          if (adaptedProfile && hasRecognizedCriteria) {
+            matchResult = evaluateTenderMatch(tender, adaptedProfile);
+          }
 
           return (
             <article
               key={tender.id}
-              className="flex flex-col justify-between rounded-lg border border-gray-200 bg-white p-6 shadow-xs transition-shadow hover:shadow-md"
+              className={`flex h-full min-w-0 flex-col justify-between rounded-lg border bg-white p-5 shadow-xs transition-shadow hover:shadow-md ${
+                isCppp
+                  ? "border-sky-200 lg:col-span-3"
+                  : "border-gray-200"
+              }`}
             >
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-block rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-800">
-                    {tender.category}
-                  </span>
-                  <span className="font-mono text-xs uppercase text-gray-400">
-                    {tender.id}
-                  </span>
+              <div
+                className={
+                  isCppp
+                    ? "flex-1 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-6"
+                    : "flex-1"
+                }
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-block max-w-full rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-800">
+                      {tender.category}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs uppercase text-gray-400">
+                      {tender.id}
+                    </span>
+                  </div>
+
+                  <h2 className="mt-4 min-w-0 break-words text-lg font-bold leading-snug text-gray-900">
+                    <Link
+                      href={`/tenders/${tender.id}`}
+                      className="break-words hover:text-green-800 hover:underline"
+                    >
+                      {tender.title}
+                    </Link>
+                  </h2>
+
+                  <p className="mt-2 break-words text-sm font-medium text-gray-600">
+                    {tender.department}
+                  </p>
+
+                  {isCppp ? (
+                    <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+                      <span className="mr-2 rounded bg-sky-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                        CPPP
+                      </span>
+                      Structured from a CPPP tender notice.
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-100 bg-amber-50/60 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
+                      <span className="inline-flex shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider">
+                        Demo Data
+                      </span>
+                      Fictional sample record for academic demonstration in INT257. Not an official government procurement notice.
+                    </div>
+                  )}
                 </div>
 
-                <h2 className="mt-4 text-lg font-bold leading-snug text-gray-900">
-                  <Link
-                    href={`/tenders/${tender.id}`}
-                    className="hover:text-green-800 hover:underline"
-                  >
-                    {tender.title}
-                  </Link>
-                </h2>
+                <div className={isCppp ? "min-w-0 lg:mt-0" : ""}>
+                  {/* Personalized Eligibility Badge on Card */}
+                  {adaptedProfile ? (
+                    hasRecognizedCriteria && matchResult ? (
+                      (() => {
+                        const mandatoryResults = Array.isArray(matchResult.criteriaResults)
+                          ? matchResult.criteriaResults.filter((c) => c && c.isMandatory)
+                          : [];
+                        let passCount = 0;
+                        let failCount = 0;
+                        let nvCount = 0;
+                        for (const c of mandatoryResults) {
+                          if (c.status === "pass") passCount++;
+                          else if (c.status === "fail") failCount++;
+                          else if (c.status === "needs_verification") nvCount++;
+                        }
+                        const parts = [];
+                        if (passCount > 0) parts.push(`${passCount} passed`);
+                        if (failCount > 0) parts.push(`${failCount} failed`);
+                        if (nvCount > 0) parts.push(`${nvCount} need verification`);
+                        const summaryText =
+                          parts.length > 0
+                            ? parts.join(" · ")
+                            : "No mandatory criteria evaluated";
 
-                <p className="mt-2 text-sm font-medium text-gray-600">
-                  {tender.department}
-                </p>
+                        return (
+                          <div className="mt-4 rounded-md border border-gray-100 bg-gray-50/80 p-3 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-gray-700">
+                                Your Profile Match:
+                              </span>
+                              <span
+                                className={`shrink-0 rounded-full border px-2.5 py-0.5 font-semibold ${statusClassName(matchResult.overallStatus)}`}
+                              >
+                                {matchResult.overallStatus}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-gray-600">{summaryText}</p>
+                            <div className="mt-2 border-t border-gray-200/60 pt-2 text-right">
+                              <Link
+                                href={`/tenders/${tender.id}#personalized-match`}
+                                className="font-medium text-green-800 hover:text-green-950 hover:underline"
+                              >
+                                View match details &rarr;
+                              </Link>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 text-xs">
+                        <span className="text-gray-500">Automated Match:</span>
+                        <span className="rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 font-medium text-gray-600">
+                          Criteria unavailable
+                        </span>
+                      </div>
+                    )
+                  ) : isSignedIn ? (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-amber-200 bg-amber-50/60 px-3 py-2 text-xs">
+                      <span className="text-gray-700">Your Profile Match:</span>
+                      <Link
+                        href="/account/profile"
+                        className="font-medium text-green-800 hover:underline"
+                      >
+                        Set up your company profile &rarr;
+                      </Link>
+                    </div>
+                  ) : null}
 
-                {isCppp ? (
-                  <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-                    <span className="mr-2 rounded bg-sky-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                      CPPP
-                    </span>
-                    Structured from a CPPP tender notice.
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <span className="mr-2 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                      Demo Data
-                    </span>
-                    Fictional sample record for academic demonstration in INT257. Not an official government procurement notice.
-                  </div>
-                )}
-
-                <div className="mt-4 space-y-2 border-t border-gray-100 pt-3 text-sm text-gray-600">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-gray-500">Location</span>
-                    <span className="text-right font-medium text-gray-800">{tender.location}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-gray-500">Estimated Value</span>
-                    <span className="text-right font-semibold text-green-800">
-                      {formatTenderValue(tender.estimatedValue)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-gray-500">Deadline</span>
-                    <span className="text-right font-medium text-gray-800">
-                      {formatTenderDate(tender.submissionDeadline)}
-                    </span>
+                  <div className="mt-4 min-w-0 space-y-2 border-t border-gray-100 pt-3 text-sm text-gray-600">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                      <span className="text-xs text-gray-500">Location</span>
+                      <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                        {tender.location}
+                      </span>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                      <span className="text-xs text-gray-500">Estimated Value</span>
+                      <span className="min-w-0 break-words text-right font-semibold text-green-800">
+                        {formatTenderValue(tender.estimatedValue)}
+                      </span>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                      <span className="text-xs text-gray-500">Deadline</span>
+                      <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                        {formatTenderDate(tender.submissionDeadline)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-6 border-t border-gray-100 pt-4">
+              <div className={`mt-5 border-t border-gray-100 pt-3 ${isCppp ? "lg:flex lg:justify-end" : ""}`}>
                 <Link
                   href={`/tenders/${tender.id}`}
-                  className="block w-full rounded-md bg-green-800 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-green-900"
+                  className={`block w-full rounded-md bg-green-800 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-green-900 ${
+                    isCppp ? "lg:w-56" : ""
+                  }`}
                 >
-                  View Details
+                  View Details &rarr;
                 </Link>
               </div>
             </article>

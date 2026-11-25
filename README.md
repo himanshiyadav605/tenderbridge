@@ -1,101 +1,103 @@
 # TenderBridge
 
-### Government Tender Matchmaking Platform for MSMEs
+### Tender discovery and preliminary MSME matching
 
-TenderBridge is a web-based platform designed to help Micro, Small and Medium Enterprises (MSMEs) discover relevant government tender opportunities and evaluate their eligibility based on their business profiles.
+TenderBridge is an academic web application for browsing tender records and comparing supported eligibility criteria with a saved MSME company profile. It is not a live procurement aggregator or an official government service.
 
-## Problem Statement
+## Implemented features
 
-MSMEs often struggle to identify suitable government tenders and understand whether they satisfy the eligibility requirements. Tender information is distributed across different procurement sources, making opportunity discovery time-consuming.
+- Browse a catalogue of tender records and view their details.
+- Register, log in, and log out using application-managed accounts.
+- Create, view, and update a persistent MSME company profile.
+- View an account dashboard and profile completion information.
+- See preliminary matching results and criterion explanations where a tender has supported structured criteria.
 
-TenderBridge aims to simplify this process through centralized tender discovery and business-based matching.
+The application currently does not provide tender search or filters, saved tenders, an administrative tender-management interface, or live procurement-portal synchronization.
 
-## Objectives
+## Routes
 
-- Provide a centralized tender discovery interface.
-- Allow MSMEs to create and manage company profiles.
-- Match tenders against company qualifications.
-- Display eligibility information and matching reasons.
-- Allow users to save relevant tenders.
-- Provide administrative tender data management.
-
-## Planned Features
-
-- User registration and login.
-- MSME company profiles.
-- Tender catalogue with search and filters.
-- Tender details and eligibility requirements.
-- Tender matching and recommendations.
-- Saved tenders.
-- Admin dashboard.
-- Tender dataset import and synchronization history.
-
-## Technology Stack
-
-| Layer | Technology |
+| Route | Purpose |
 |---|---|
-| Frontend | Next.js App Router |
-| Language | JavaScript |
-| Styling | Tailwind CSS |
-| Backend | Next.js Route Handlers |
-| Database | MongoDB Atlas |
-| ODM | Mongoose |
-| Authentication | Auth.js / Credentials |
-| Validation | Zod |
-| Deployment | Vercel |
-| Version Control | GitHub |
+| `/` | Home |
+| `/about` | About TenderBridge |
+| `/login` | Sign in |
+| `/register` | Create an account |
+| `/account` | Account dashboard (protected) |
+| `/account/profile` | Create or update an MSME profile (protected) |
+| `/tenders` | Tender catalogue |
+| `/tenders/[id]` | Tender details and supported matching results |
 
-## Project Pages
+## Technology
 
-- Home
-- Browse Tenders
-- Tender Details
-- About
-- Login
-- Register
-- MSME Dashboard
-- Company Profile
-- Recommended Tenders
-- Saved Tenders
-- Admin Dashboard
+| Area | Implementation |
+|---|---|
+| Web framework | Next.js App Router |
+| UI | React and Tailwind CSS |
+| Server endpoints | Next.js Route Handlers |
+| Database access | MongoDB through Mongoose |
+| Password hashing | Node.js `crypto.scrypt` with a random salt |
+| Sessions | Custom HMAC-SHA256-signed `tb_session` cookie |
+| Input validation | Application validation helpers and Mongoose schema constraints |
 
-## Tender Data Approach
+Authentication is implemented in the application; it does not use Auth.js. Session tokens are signed using `SESSION_SECRET`, expire after 24 hours, and are stored in an HttpOnly, SameSite=Lax cookie. The cookie is Secure in production.
 
-The initial academic MVP will use a prepared dataset containing sample tender records and verified public tender information where available.
+Registration and login input checks are implemented in `lib/user-input.js`. MSME profile payload validation and sanitization are implemented in `lib/profile-input.js`; database models in `models/` also define schema constraints. The project does not use Zod.
 
-Sample records will be clearly identified as demo data. Live integration with government procurement portals is a planned future enhancement, subject to permitted data access.
+## Tender data and matching
 
-## Team
+The tender catalogue is a local dataset in `data/tenders.js`; it is not synchronized with procurement portals.
 
-This project is developed collaboratively by a three-member student team as part of INT257 – Modern Web Application Development.
+- `tnd-001` through `tnd-006` are fictional sample records for academic demonstration. They are labeled as demo data and do not represent real procurement notices.
+- `tnd-007` is structured from a DRDO tender notice published through CPPP. Its eligibility summary is synthesized from the notice, and the original notice remains authoritative. This record is not a live feed; its current data entry does not provide a source URL or downloadable notice document.
 
-## Running Locally
+The matching engine evaluates supported structured criteria. The current detailed evaluation covers five mandatory criteria for `tnd-007`; records without recognized structured criteria may show that criteria are unavailable. A public preview may use a demonstration profile, not a visitor's verified company information.
 
-Clone the repository:
+Every result is preliminary and advisory. An `Eligible` result does not establish official eligibility, guarantee acceptance, or guarantee a contract award. Confirm requirements against the original procurement notice and the procuring authority.
 
-```bash
-git clone https://github.com/himanshiyadav605/tenderbridge.git
-cd tenderbridge
-```
+## Local setup
 
-Install dependencies:
+You need Node.js and npm, plus a MongoDB database that the application can reach.
 
-```bash
-npm install
-```
+1. Clone the repository and install dependencies:
 
-Start the development server:
+   ```bash
+   git clone https://github.com/himanshiyadav605/tenderbridge.git
+   cd tenderbridge
+   npm install
+   ```
 
-```bash
-npm run dev
-```
+2. Create `.env.local` in the repository root and set:
 
-Open http://localhost:3000.
+   ```dotenv
+   MONGODB_URI=<your MongoDB connection URI>
+   SESSION_SECRET=<a long, randomly generated secret>
+   ```
 
-## Project Status
+   Replace both placeholders with values for your environment. `MONGODB_URI` identifies the database used by authentication and profile features. `SESSION_SECRET` is required to sign session cookies. Do not commit `.env.local` or share its values; environment files are ignored by Git.
 
-Initial Next.js application setup completed. Feature development is in progress.
+3. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000).
+
+Available package scripts:
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the development server |
+| `npm run lint` | Run ESLint |
+| `npm run build` | Create a production build |
+| `npm start` | Start the production server after building |
+
+The repository does not define an `npm test` script. Integration scripts in `scratch/` create and delete database records; use them only with a disposable database, and ensure the test process and the server use that same isolated database.
+
+## Project context
+
+TenderBridge is an academic project for INT257: Modern Web Application Development.
 
 ## Disclaimer
 
-TenderBridge is an academic project. It is not an official government procurement portal and does not guarantee tender eligibility or contract awards.
+TenderBridge is not an official government procurement portal. Matching results are automated preliminary assessments, do not guarantee legal tender eligibility or acceptance, and do not guarantee contract awards.

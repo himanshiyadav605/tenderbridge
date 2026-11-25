@@ -1,11 +1,32 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import LoginForm from "../../components/LoginForm";
+import { getCurrentUser } from "../../lib/current-user";
 
 export const metadata = {
   title: "Login | TenderBridge",
-  description: "Sign in to access your TenderBridge dashboard and recommendations.",
+  description: "Sign in to your TenderBridge account.",
 };
 
-export default function LoginPage() {
+function noticeFor(error) {
+  if (error === "expired") {
+    return "Your session has expired. Please sign in again.";
+  }
+  if (error === "invalid") {
+    return "Your session is no longer valid. Please sign in again.";
+  }
+  return "";
+}
+
+export default async function LoginPage({ searchParams }) {
+  const result = await getCurrentUser();
+  if (result.user) {
+    redirect("/account");
+  }
+
+  const params = await searchParams;
+  const notice = noticeFor(typeof params.error === "string" ? params.error : "");
+
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6 py-12">
       <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
@@ -17,16 +38,11 @@ export default function LoginPage() {
             Sign In to TenderBridge
           </h1>
           <p className="mt-2 text-sm text-gray-600">
-            Access your MSME profile, saved tenders, and matching results.
+            Sign in with the email and password stored for your account.
           </p>
         </div>
 
-        <div className="mt-8 rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-600">
-          <p className="font-medium text-gray-800">Authentication Portal</p>
-          <p className="mt-1 text-xs text-gray-500">
-            User authentication and credential handling are scheduled for integration in Unit IV, Topic 1.
-          </p>
-        </div>
+        <LoginForm notice={notice} />
 
         <div className="mt-6 text-center text-sm text-gray-600">
           Don&apos;t have an account?{" "}
