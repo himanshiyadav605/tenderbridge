@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { getAllTenders } from "../../data/tenders";
-import { evaluateTenderMatch } from "../../lib/tender-matching";
+import { getCatalogueTenders } from "../../lib/tender-data";
+import { evaluateTenderMatch, evaluateTenderRelevance } from "../../lib/tender-matching";
 import { getCurrentUser } from "../../lib/current-user";
 import connectDB from "../../lib/db";
 import MsmeProfile from "../../models/MsmeProfile";
@@ -76,8 +76,10 @@ export const metadata = {
   description: "Explore government tender opportunities and view detailed requirements for MSMEs.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function TendersPage() {
-  const tenders = getAllTenders();
+  const tenders = await getCatalogueTenders();
 
   // Load authenticated user and profile
   const auth = await getCurrentUser();
@@ -106,6 +108,9 @@ export default async function TendersPage() {
         </h1>
         <p className="mt-2 max-w-3xl text-base text-gray-600">
           Explore active tender opportunities matching various business sectors. Click any tender to inspect detailed eligibility requirements. Each card identifies a fictional sample or a CPPP-structured record.
+        </p>
+        <p className="mt-3 max-w-3xl rounded-md border border-sky-100 bg-sky-50/60 px-3 py-2 text-xs text-sky-950">
+          Live GeM records are periodically refreshed, with coverage limited to the most recent 100 results configured for the actor.
         </p>
       </div>
 
@@ -154,6 +159,7 @@ export default async function TendersPage() {
       <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 lg:grid-cols-3">
         {tenders.map((tender) => {
           const isCppp = tender.source === "CPPP";
+          const isGem = tender.source === "GEM";
           const requirements = Array.isArray(tender.eligibilityRequirements)
             ? tender.eligibilityRequirements
             : [];
@@ -163,6 +169,9 @@ export default async function TendersPage() {
 
           // Calculate match for authenticated user with profile
           let matchResult = null;
+          const relevanceResult = adaptedProfile
+            ? evaluateTenderRelevance(tender, adaptedProfile)
+            : null;
           if (adaptedProfile && hasRecognizedCriteria) {
             matchResult = evaluateTenderMatch(tender, adaptedProfile);
           }
@@ -186,7 +195,7 @@ export default async function TendersPage() {
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="inline-block max-w-full rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-800">
-                      {tender.category}
+                      {tender.category || (isGem ? "Live GeM Bid" : "Uncategorised")}
                     </span>
                     <span className="shrink-0 font-mono text-xs uppercase text-gray-400">
                       {tender.id}
@@ -203,10 +212,17 @@ export default async function TendersPage() {
                   </h2>
 
                   <p className="mt-2 break-words text-sm font-medium text-gray-600">
-                    {tender.department}
+                    {tender.department || (isGem ? "Department unavailable" : "Department unavailable")}
                   </p>
 
-                  {isCppp ? (
+                  {isGem ? (
+                    <div className="mt-3 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950">
+                      <span className="mr-2 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                        Live GeM
+                      </span>
+                      GeM bid discovery record. Eligibility criteria unavailable.
+                    </div>
+                  ) : isCppp ? (
                     <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
                       <span className="mr-2 rounded bg-sky-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
                         CPPP
@@ -224,6 +240,28 @@ export default async function TendersPage() {
                 </div>
 
                 <div className={isCppp ? "min-w-0 lg:mt-0" : ""}>
+                  {relevanceResult ? (
+                    <div className="mt-4 rounded-md border border-blue-100 bg-blue-50/60 p-3 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-gray-700">Industry Relevance:</span>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 font-semibold ${
+                            relevanceResult.classification === "Relevant"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : relevanceResult.classification === "Insufficient Information"
+                                ? "border-gray-200 bg-white text-gray-600"
+                                : "border-amber-200 bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          {relevanceResult.classification}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 break-words text-[11px] text-gray-600">
+                        {relevanceResult.explanation}
+                      </p>
+                    </div>
+                  ) : null}
+
                   {/* Personalized Eligibility Badge on Card */}
                   {adaptedProfile ? (
                     hasRecognizedCriteria && matchResult ? (
@@ -274,9 +312,9 @@ export default async function TendersPage() {
                       })()
                     ) : (
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 text-xs">
-                        <span className="text-gray-500">Automated Match:</span>
-                        <span className="rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 font-medium text-gray-600">
-                          Criteria unavailable
+                        <span className="text-gray-500">Qualification Eligibility:</span>
+                        <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 font-medium text-gray-600">
+                          Qualification criteria unavailable
                         </span>
                       </div>
                     )
@@ -293,24 +331,56 @@ export default async function TendersPage() {
                   ) : null}
 
                   <div className="mt-4 min-w-0 space-y-2 border-t border-gray-100 pt-3 text-sm text-gray-600">
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                      <span className="text-xs text-gray-500">Location</span>
-                      <span className="min-w-0 break-words text-right font-medium text-gray-800">
-                        {tender.location}
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                      <span className="text-xs text-gray-500">Estimated Value</span>
-                      <span className="min-w-0 break-words text-right font-semibold text-green-800">
-                        {formatTenderValue(tender.estimatedValue)}
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                      <span className="text-xs text-gray-500">Deadline</span>
-                      <span className="min-w-0 break-words text-right font-medium text-gray-800">
-                        {formatTenderDate(tender.submissionDeadline)}
-                      </span>
-                    </div>
+                    {isGem ? (
+                      <>
+                        <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                          <span className="text-xs text-gray-500">GeM Bid ID</span>
+                          <span className="min-w-0 break-words text-right font-mono font-medium text-gray-800">
+                            {tender.officialTenderId}
+                          </span>
+                        </div>
+                        {tender.publishedAt ? (
+                          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                            <span className="text-xs text-gray-500">Published</span>
+                            <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                              {formatTenderDate(tender.publishedAt)}
+                            </span>
+                          </div>
+                        ) : null}
+                        {tender.lastFetchedAt ? (
+                          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                            <span className="text-xs text-gray-500">Last Synced</span>
+                            <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                              {formatTenderDate(tender.lastFetchedAt)}
+                            </span>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {!isGem && tender.location ? (
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                        <span className="text-xs text-gray-500">Location</span>
+                        <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                          {tender.location}
+                        </span>
+                      </div>
+                    ) : null}
+                    {!isGem && tender.estimatedValue != null ? (
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                        <span className="text-xs text-gray-500">Estimated Value</span>
+                        <span className="min-w-0 break-words text-right font-semibold text-green-800">
+                          {formatTenderValue(tender.estimatedValue)}
+                        </span>
+                      </div>
+                    ) : null}
+                    {tender.submissionDeadline ? (
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                        <span className="text-xs text-gray-500">Deadline</span>
+                        <span className="min-w-0 break-words text-right font-medium text-gray-800">
+                          {formatTenderDate(tender.submissionDeadline)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -52,6 +52,35 @@ The tender catalogue is a local dataset in `data/tenders.js`; it is not synchron
 
 The matching engine evaluates supported structured criteria. The current detailed evaluation covers five mandatory criteria for `tnd-007`; records without recognized structured criteria may show that criteria are unavailable. A public preview may use a demonstration profile, not a visitor's verified company information.
 
+### Live GeM tender ingestion
+
+TenderBridge can periodically import GeM bid discovery records from the `themineworks/india-tenders-scraper` Apify Actor. Only the `gem` source is enabled; central CPPP and state sources are disabled.
+
+Configure these environment variables:
+
+```dotenv
+MONGODB_URI=<MongoDB Atlas connection URI>
+SESSION_SECRET=<long random session secret>
+APIFY_API_TOKEN=<Apify API token>
+CRON_SECRET=<long random cron authorization secret>
+```
+
+`APIFY_API_TOKEN` and `CRON_SECRET` must be kept server-side and must not be added to browser code or `NEXT_PUBLIC_*` variables. `.env.local` is for local development and must not be committed.
+
+A Vercel Cron request invokes `/api/cron/gem` once daily at 02:00 UTC. The route requires:
+
+```text
+Authorization: Bearer <CRON_SECRET>
+```
+
+For local manual testing, start the application and send:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/gem
+```
+
+Do not run the cron route against a production database during local testing. The ingestion is capped at 100 GeM records per run. Historical records are preserved; missing disappeared tenders are not inferred to be cancelled or withdrawn. Live GeM records are discovery data and do not receive automatic eligibility status.
+
 Every result is preliminary and advisory. An `Eligible` result does not establish official eligibility, guarantee acceptance, or guarantee a contract award. Confirm requirements against the original procurement notice and the procuring authority.
 
 ## Local setup

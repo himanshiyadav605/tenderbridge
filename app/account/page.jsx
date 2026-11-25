@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getCurrentUser } from "../../lib/current-user";
 import connectDB from "../../lib/db";
 import MsmeProfile from "../../models/MsmeProfile";
-import { getAllTenders } from "../../data/tenders";
+import { getCatalogueTenders } from "../../lib/tender-data";
 import { adaptProfileForMatching } from "../../lib/profile-to-matching";
 import { evaluateTenderMatch } from "../../lib/tender-matching";
 import { calculateProfileCompletion } from "../../lib/profile-completion";
@@ -14,6 +14,8 @@ export const metadata = {
   description:
     "View and manage your TenderBridge account, persistent MSME company profile, and personalized tender matches.",
 };
+
+export const dynamic = "force-dynamic";
 
 const MONTHS = [
   "Jan",
@@ -255,18 +257,31 @@ function EvaluatedTenderCard({ tender, matchResult, isProminent }) {
 
 function UnavailableTenderCard({ tender }) {
   const detailHref = `/tenders/${tender.id}`;
+  const isGem = tender.source === "GEM";
 
   return (
     <article className="flex min-w-0 flex-col justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-xs transition-shadow hover:shadow-md sm:p-5">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-mono text-xs font-medium uppercase text-gray-500">
-            {tender.id}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs font-medium uppercase text-gray-500">
+              {tender.id}
+            </span>
+            {isGem ? (
+              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-900">
+                Live GeM
+              </span>
+            ) : null}
+          </div>
           <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
             Criteria unavailable
           </span>
         </div>
+        {isGem && tender.officialTenderId ? (
+          <p className="mt-2 font-mono text-xs text-gray-500">
+            GeM Bid ID: {tender.officialTenderId}
+          </p>
+        ) : null}
 
         <h4 className="mt-3 min-w-0 break-words text-base font-bold leading-snug text-gray-900">
           <Link
@@ -330,7 +345,7 @@ export default async function AccountPage() {
   let userProfile = null;
   let adaptedProfile = null;
   let profileLoadError = false;
-  const tenders = getAllTenders();
+  const tenders = await getCatalogueTenders();
   const groups = {
     eligible: [],
     needsVerification: [],

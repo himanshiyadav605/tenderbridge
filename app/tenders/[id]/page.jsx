@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllTenders, getTenderById } from "../../../data/tenders";
+import { getCatalogueTenderById } from "../../../lib/tender-data";
 import { DEMO_MSME_PROFILE } from "../../../data/msme-profile";
 import { evaluateTenderMatch } from "../../../lib/tender-matching";
 import { getCurrentUser } from "../../../lib/current-user";
@@ -87,9 +88,11 @@ export function generateStaticParams() {
   }));
 }
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }) {
   const { id } = await params;
-  const tender = getTenderById(id);
+  const tender = await getCatalogueTenderById(id);
 
   if (!tender) {
     return {
@@ -106,7 +109,7 @@ export async function generateMetadata({ params }) {
 
 export default async function TenderDetailPage({ params }) {
   const { id } = await params;
-  const tender = getTenderById(id);
+  const tender = await getCatalogueTenderById(id);
 
   if (!tender) {
     notFound();
@@ -127,6 +130,7 @@ export default async function TenderDetailPage({ params }) {
   }
 
   const isCppp = tender.source === "CPPP";
+  const isGem = tender.source === "GEM";
   const requirements = Array.isArray(tender.eligibilityRequirements)
     ? tender.eligibilityRequirements
     : [];
@@ -145,7 +149,16 @@ export default async function TenderDetailPage({ params }) {
         </Link>
       </div>
 
-      {isCppp ? (
+      {isGem ? (
+        <div className="mb-5 rounded-lg border border-violet-200 bg-violet-50/80 p-3 text-xs leading-relaxed text-violet-950 sm:p-4">
+          <span className="mr-2 inline-flex rounded bg-violet-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+            Live GeM
+          </span>
+          <span>
+            Periodically refreshed GeM bid discovery record. Eligibility criteria are unavailable and have not been inferred from this listing.
+          </span>
+        </div>
+      ) : isCppp ? (
         <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50/80 p-3 text-xs leading-relaxed text-sky-950 sm:p-4">
           <span className="mr-2 inline-flex rounded bg-sky-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
             CPPP
@@ -168,7 +181,7 @@ export default async function TenderDetailPage({ params }) {
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-xs sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-4">
           <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-800">
-            {tender.category}
+            {tender.category || (isGem ? "Live GeM Bid" : "Uncategorised")}
           </span>
           <span className="rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-semibold uppercase text-gray-600">
             ID: {tender.id}
@@ -179,35 +192,85 @@ export default async function TenderDetailPage({ params }) {
           {tender.title}
         </h1>
         <p className="mt-2 break-words text-base font-medium text-gray-600">
-          {tender.department}
+          {tender.department || (isGem ? "Department unavailable" : "")}
         </p>
 
         <div className="mt-6 grid grid-cols-1 gap-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-2 sm:p-4 lg:grid-cols-3">
-          <div className="min-w-0 rounded-lg bg-white p-3">
-            <span className="block text-xs uppercase tracking-wider text-gray-500">
-              Estimated Value
-            </span>
-            <span className="mt-1 block break-words text-lg font-bold text-green-800">
-              {formatTenderValue(tender.estimatedValue)}
-            </span>
-          </div>
-          <div className="min-w-0 rounded-lg bg-white p-3">
-            <span className="block text-xs uppercase tracking-wider text-gray-500">
-              Location
-            </span>
-            <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
-              {tender.location}
-            </span>
-          </div>
-          <div className="min-w-0 rounded-lg bg-white p-3 sm:col-span-2 lg:col-span-1">
-            <span className="block text-xs uppercase tracking-wider text-gray-500">
-              Submission Deadline
-            </span>
-            <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
-              {formatTenderDate(tender.submissionDeadline)}
-            </span>
-          </div>
+          {isGem ? (
+            <>
+              <div className="min-w-0 rounded-lg bg-white p-3">
+                <span className="block text-xs uppercase tracking-wider text-gray-500">GeM Bid ID</span>
+                <span className="mt-1 block break-words font-mono text-sm font-semibold text-gray-900">
+                  {tender.officialTenderId}
+                </span>
+              </div>
+              {tender.publishedAt ? (
+                <div className="min-w-0 rounded-lg bg-white p-3">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Published</span>
+                  <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
+                    {formatTenderDate(tender.publishedAt)}
+                  </span>
+                </div>
+              ) : null}
+              {tender.submissionDeadline ? (
+                <div className="min-w-0 rounded-lg bg-white p-3">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Submission Deadline</span>
+                  <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
+                    {formatTenderDate(tender.submissionDeadline)}
+                  </span>
+                </div>
+              ) : null}
+              {tender.lastFetchedAt ? (
+                <div className="min-w-0 rounded-lg bg-white p-3">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Last Synced</span>
+                  <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
+                    {formatTenderDate(tender.lastFetchedAt)}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {tender.estimatedValue != null ? (
+                <div className="min-w-0 rounded-lg bg-white p-3">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Estimated Value</span>
+                  <span className="mt-1 block break-words text-lg font-bold text-green-800">
+                    {formatTenderValue(tender.estimatedValue)}
+                  </span>
+                </div>
+              ) : null}
+              {tender.location ? (
+                <div className="min-w-0 rounded-lg bg-white p-3">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Location</span>
+                  <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
+                    {tender.location}
+                  </span>
+                </div>
+              ) : null}
+              {tender.submissionDeadline ? (
+                <div className="min-w-0 rounded-lg bg-white p-3 sm:col-span-2 lg:col-span-1">
+                  <span className="block text-xs uppercase tracking-wider text-gray-500">Submission Deadline</span>
+                  <span className="mt-1 block break-words text-sm font-semibold text-gray-900">
+                    {formatTenderDate(tender.submissionDeadline)}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
+
+        {isGem && tender.documentUrl ? (
+          <div className="mt-4">
+            <a
+              href={tender.documentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-900 hover:bg-violet-100"
+            >
+              Official Tender Document &rarr;
+            </a>
+          </div>
+        ) : null}
 
         {isCppp ? (
           <div className="mt-8 border-t border-gray-100 pt-6">

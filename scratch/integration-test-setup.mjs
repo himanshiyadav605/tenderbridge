@@ -35,7 +35,7 @@ function readTestMongoUriFromEnvFile() {
   return "";
 }
 
-function configureIntegrationTestDatabase() {
+export function configureIntegrationTestDatabase() {
   if (!process.env.TEST_MONGODB_URI) {
     process.env.TEST_MONGODB_URI = readTestMongoUriFromEnvFile();
   }
